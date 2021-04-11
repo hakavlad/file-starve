@@ -1,0 +1,162 @@
+#!/usr/bin/env python3
+
+from argparse import ArgumentParser
+from os import getpid, kill
+from signal import SIGHUP, SIGINT, SIGQUIT, SIGTERM, SIGUSR1, signal
+from sys import exit
+from time import monotonic
+
+
+def check_meminfo():
+    """
+    """
+    with open('/proc/meminfo', 'rb', buffering=0) as f:
+        x = f.read().decode().split(' kB\n')
+        mem_free = int(x[mem_free_index].split(':')[1])
+        active_file = int(x[active_file_index].split(':')[1])
+        inactive_file = int(x[inactive_file_index].split(':')[1])
+    return mem_free, active_file + inactive_file
+
+
+def signal_handler(signum, frame):
+    """
+    """
+    def signal_handler_inner(signum, frame):
+        pass
+
+    for i in sig_list:
+        signal(i, signal_handler_inner)
+
+    print('\nGot signal', signum)
+    exit()
+
+
+parser = ArgumentParser()
+
+
+parser.add_argument(
+    '-t',
+    '--target',
+    help='target size of file cache in MiB',
+    default=15,
+    type=float
+)
+
+
+parser.add_argument(
+    '-T',
+    '--timeout',
+    help='timeout in seconds after reaching the target',
+    default=60.0,
+    type=float
+)
+
+
+parser.add_argument(
+    '-s',
+    '--scale',
+    help='MemFree scale factor',
+    default=1.5,
+    type=float
+)
+
+
+parser.add_argument(
+    '-c',
+    '--chunk',
+    help='chunk size in KiB',
+    default=16,
+    type=int
+)
+
+
+args = parser.parse_args()
+
+
+target = args.target
+timeout = args.timeout
+free_scale_factor = args.scale
+chunk_size_kbytes = args.chunk
+
+
+if target < 0:
+    print('error: invalid target value (must be >= 0)')
+    exit(1)
+
+if timeout < 0:
+    print('error: invalid timeout value (must be >= 0)')
+    exit(1)
+
+if free_scale_factor < 1:
+    print('error: invalid scale factor value (must be >= 1)')
+    exit(1)
+
+if chunk_size_kbytes < 1:
+    print('error: invalid chunk size value (must be >= 1)')
+    exit(1)
+
+
+with open('/proc/meminfo') as f:
+    mem_list = f.readlines()
+
+mem_list_names = []
+for s in mem_list:
+    mem_list_names.append(s.split(':')[0])
+
+mem_free_index = mem_list_names.index('MemFree')
+active_file_index = mem_list_names.index('Active(file)')
+inactive_file_index = mem_list_names.index('Inactive(file)')
+
+ex_list = []
+
+K = 1024
+
+# in bytes
+CHUNK = K * chunk_size_kbytes
+
+# MiB -> KiB
+f_target = K * target
+
+target_reached = False
+
+sig_list = [SIGTERM, SIGINT, SIGQUIT, SIGHUP]
+
+for i in sig_list:
+    signal(i, signal_handler)
+
+self_pid = getpid()
+
+with open('/proc/self/oom_score_adj', 'w') as f:
+    f.write('1000\n')
+
+free_dict = dict()
+
+print('Starting file-starve')
+print('  target file cache size:             {} MiB'.format(target))
+print('  timeout after reaching the target:  {} sec'.format(timeout))
+print('  MemFree scale factor:               {}'.format(free_scale_factor))
+print('  chunk size:                         {} KiB'.format(chunk_size_kbytes))
+
+start_time = monotonic()
+
+while True:
+    if target_reached and monotonic() - start_time >= timeout:
+        kill(self_pid, SIGUSR1)
+
+    mem_free, mem_file = check_meminfo()
+
+    if 'min' not in free_dict or mem_free < free_dict['min']:
+        free_dict['min'] = mem_free
+
+    if mem_file > f_target:
+        ex_list.append(bytearray(CHUNK))
+    else:
+        if not target_reached:
+            start_time = monotonic()
+            target_reached = True
+
+        if mem_free < free_dict['min'] * free_scale_factor:
+            try:
+                ex_list.pop()
+            except IndexError:
+                pass
