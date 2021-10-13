@@ -7,6 +7,8 @@ Freeze your Linux system due to eviction of file pages and disk cache starvation
 
 This script makes it possible to artificially reproduce [page cache](https://www.kernel.org/doc/html/latest/admin-guide/mm/concepts.html#page-cache) starvation and [thrashing](https://en.wikipedia.org/wiki/Thrashing_(computer_science)) by holding a specified amount of file pages (10 MiB `Active(file)`+`Inactive(file)` by default) for a specified amount of time (60s by default).
 
+This script allows you to investigate the effects that occur when the page cache size decreases: from moderate thrashing to completely freezing the UI.
+
 ## Background
 
 Let's talk about the elephant in the room - the Linux kernel's inability to gracefully handle low memory pressure:
@@ -67,6 +69,8 @@ $ sudo make uninstall
 
 ## See also
 
-- [Lock executables and shared libraries in memory to improve system responsiveness under low-memory conditions](https://github.com/hakavlad/prelockd)
-- [[PATCH] mm: Protect the working set under memory pressure to prevent thrashing, avoid high latency and prevent livelock in near-OOM conditions](https://github.com/hakavlad/le9-patch)
+- Lock executables and shared libraries in memory to improve system responsiveness under low-memory conditions
+    - https://github.com/hakavlad/prelockd
+- [PATCH] mm: Protect the working set under memory pressure to prevent thrashing, avoid high latency and prevent livelock in near-OOM conditions
+    - https://github.com/hakavlad/le9-patch
 
