@@ -3,9 +3,9 @@
 
 [![Total alerts](https://img.shields.io/lgtm/alerts/g/hakavlad/file-starve.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/hakavlad/file-starve/alerts/)
 
-Freeze your Linux system due to eviction of file pages and file cache starvation.
+Freeze your Linux system due to eviction of file pages and disk cache starvation.
 
-This script makes it possible to artificially reproduce file cache starvation and thrashing by holding a specified amount of disk cache (10 MiB `Active(file)`+`Inactive(file)` by default) for a specified amount of time (60s by default).
+This script makes it possible to artificially reproduce [page cache](https://www.kernel.org/doc/html/latest/admin-guide/mm/concepts.html#page-cache) starvation and [thrashing](https://en.wikipedia.org/wiki/Thrashing_(computer_science)) by holding a specified amount of file pages (10 MiB `Active(file)`+`Inactive(file)` by default) for a specified amount of time (60s by default).
 
 ## Background
 
@@ -46,7 +46,7 @@ optional arguments:
 ## Warnings
 
 - The UI may not respond while the script is running.
-- In some cases, the UI may not respond even after the specified timeout has expired (the default is 60 seconds).
+- In some cases, the UI may not respond even after the specified timeout has expired.
 
 ## Requirements
 
@@ -64,4 +64,9 @@ Uninstall
 ```bash
 $ sudo make uninstall
 ```
+
+## See also
+
+- [Lock executables and shared libraries in memory to improve system responsiveness under low-memory conditions](https://github.com/hakavlad/prelockd)
+- [[PATCH] mm: Protect the working set under memory pressure to prevent thrashing, avoid high latency and prevent livelock in near-OOM conditions](https://github.com/hakavlad/le9-patch)
 
