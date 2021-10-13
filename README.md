@@ -3,11 +3,7 @@
 
 [![Total alerts](https://img.shields.io/lgtm/alerts/g/hakavlad/file-starve.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/hakavlad/file-starve/alerts/)
 
-Freeze your Linux system due to eviction of file pages and disk cache starvation.
-
-This script makes it possible to artificially reproduce [page cache](https://www.kernel.org/doc/html/latest/admin-guide/mm/concepts.html#page-cache) starvation and [thrashing](https://en.wikipedia.org/wiki/Thrashing_(computer_science)) by holding a specified amount of file pages (10 MiB `Active(file)`+`Inactive(file)` by default) for a specified amount of time (60s by default).
-
-This script allows you to investigate the effects that occur when the page cache size decreases: from moderate thrashing to completely freezing the UI.
+Explore the effects that occur when the [page cache](https://www.kernel.org/doc/html/latest/admin-guide/mm/concepts.html#page-cache) size decreases: from moderate [thrashing](https://en.wikipedia.org/wiki/Thrashing_(computer_science)) to completely freezing the UI. This script tries to keep a specified amount of file pages (10 MiB `Active(file)`+`Inactive(file)` by default) for a specified amount of time (60s by default).
 
 ## Background
 
