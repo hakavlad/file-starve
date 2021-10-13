@@ -10,12 +10,53 @@ from time import monotonic
 def check_meminfo():
     """
     """
-    with open('/proc/meminfo', 'rb', buffering=0) as f:
-        x = f.read().decode().split(' kB\n')
-        mem_free = int(x[mem_free_index].split(':')[1])
-        active_file = int(x[active_file_index].split(':')[1])
-        inactive_file = int(x[inactive_file_index].split(':')[1])
+    fd[None].seek(0)
+    m_list = fd[None].read().decode().split(' kB\n')
+    mem_free = int(m_list[mem_free_index].split(':')[1])
+    active_file = int(m_list[active_file_index].split(':')[1])
+    inactive_file = int(m_list[inactive_file_index].split(':')[1])
     return mem_free, active_file + inactive_file
+
+
+def keep_starved():
+    """
+    """
+    start_time = monotonic()
+
+    while True:
+        t = monotonic() - start_time
+
+        if t >= timeout:
+            kill(self_pid, SIGUSR1)
+        else:
+            mem_free, mem_file = check_meminfo()
+
+            if mem_free < free_dict[None]:
+                free_dict[None] = mem_free
+
+            if mem_file > f_target:
+                ex_list.append(bytearray(CHUNK))
+            else:
+                if mem_free < free_dict[None] * free_scale_factor:
+                    try:
+                        ex_list.pop()
+                    except IndexError:
+                        continue
+
+
+def starve():
+    """
+    """
+    while True:
+        mem_free, mem_file = check_meminfo()
+
+        if None not in free_dict or mem_free < free_dict[None]:
+            free_dict[None] = mem_free
+
+        if mem_file > f_target:
+            ex_list.append(bytearray(CHUNK))
+        else:
+            keep_starved()
 
 
 def signal_handler(signum, frame):
@@ -38,7 +79,7 @@ parser.add_argument(
     '-t',
     '--target',
     help='target size of file cache in MiB',
-    default=15,
+    default=10,
     type=float
 )
 
@@ -56,7 +97,7 @@ parser.add_argument(
     '-s',
     '--scale',
     help='MemFree scale factor',
-    default=1.5,
+    default=2,
     type=float
 )
 
@@ -65,7 +106,7 @@ parser.add_argument(
     '-c',
     '--chunk',
     help='chunk size in KiB',
-    default=16,
+    default=64,
     type=int
 )
 
@@ -96,11 +137,13 @@ if chunk_size_kbytes < 1:
     exit(1)
 
 
-with open('/proc/meminfo') as f:
-    mem_list = f.readlines()
+MEMINFO = '/proc/meminfo'
+
+with open(MEMINFO) as f:
+    m_list = f.readlines()
 
 mem_list_names = []
-for s in mem_list:
+for s in m_list:
     mem_list_names.append(s.split(':')[0])
 
 mem_free_index = mem_list_names.index('MemFree')
@@ -117,7 +160,9 @@ CHUNK = K * chunk_size_kbytes
 # MiB -> KiB
 f_target = K * target
 
-target_reached = False
+fd = dict()
+
+fd[None] = open(MEMINFO, 'rb', buffering=0)
 
 sig_list = [SIGTERM, SIGINT, SIGQUIT, SIGHUP]
 
@@ -137,26 +182,5 @@ print('  timeout after reaching the target:  {} sec'.format(timeout))
 print('  MemFree scale factor:               {}'.format(free_scale_factor))
 print('  chunk size:                         {} KiB'.format(chunk_size_kbytes))
 
-start_time = monotonic()
 
-while True:
-    if target_reached and monotonic() - start_time >= timeout:
-        kill(self_pid, SIGUSR1)
-
-    mem_free, mem_file = check_meminfo()
-
-    if 'min' not in free_dict or mem_free < free_dict['min']:
-        free_dict['min'] = mem_free
-
-    if mem_file > f_target:
-        ex_list.append(bytearray(CHUNK))
-    else:
-        if not target_reached:
-            start_time = monotonic()
-            target_reached = True
-
-        if mem_free < free_dict['min'] * free_scale_factor:
-            try:
-                ex_list.pop()
-            except IndexError:
-                pass
+starve()
