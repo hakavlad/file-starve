@@ -9,7 +9,7 @@ Freeze your Linux system due to eviction of file pages and file cache starvation
 
 Just run the script. 
 ```
-$ ./file-starve -h
+$ file-starve -h
 usage: file-starve [-h] [-t TARGET] [-T TIMEOUT] [-s SCALE] [-c CHUNK]
 
 optional arguments:
@@ -28,10 +28,10 @@ Output example:
 ```
 $ file-starve
 Starting file-starve
-  target file cache size:             15 MiB
+  target file cache size:             10 MiB
   timeout after reaching the target:  60.0 sec
-  MemFree scale factor:               1.5
-  chunk size:                         16 KiB
+  MemFree scale factor:               2
+  chunk size:                         64 KiB
 User defined signal 1
 ```
 
@@ -39,15 +39,16 @@ User defined signal 1
 
 - Python >= 3.3
 
-## Install
-```
-$ git clone https://github.com/hakavlad/file-starve.git
-$ cd file-starve
+## Installation
+
+Install
+```bash
+$ git clone https://github.com/hakavlad/file-starve.git && cd file-starve
 $ sudo make install
 ```
 
-## Uninstall
-```
+Uninstall
+```bash
 $ sudo make uninstall
 ```
 
