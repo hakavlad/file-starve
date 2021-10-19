@@ -3,12 +3,16 @@
 
 [![Total alerts](https://img.shields.io/lgtm/alerts/g/hakavlad/file-starve.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/hakavlad/file-starve/alerts/)
 
-Explore the effects that occur when the [page cache](https://www.kernel.org/doc/html/latest/admin-guide/mm/concepts.html#page-cache) size decreases: from moderate [thrashing](https://en.wikipedia.org/wiki/Thrashing_(computer_science)) to completely freezing the UI. This script tries to keep a specified amount of file pages (10 MiB `Active(file)`+`Inactive(file)` by default) for a specified amount of time (60s by default).
+Explore the impact of reducing [page cache](https://www.kernel.org/doc/html/latest/admin-guide/mm/concepts.html#page-cache) size: from moderate [thrashing](https://en.wikipedia.org/wiki/Thrashing_(computer_science)) to a complete UI freeze. This script tries to keep a specified size of LRU file lists (10 MiB by default) within a specified time (60s by default).
 
 ## Background
 
 Let's talk about the elephant in the room - the Linux kernel's inability to gracefully handle low memory pressure:
 - https://lore.kernel.org/lkml/d9802b6a-949b-b327-c4a6-3dbca485ec20@gmx.com/
+
+>...in normal operation you will have nearly all of your executables nad libraries sitting in good ol' physical RAM. But when RAM runs low, but not low enough for the out-of-memory killer to be run, these pages are evicted from RAM. So you end up with a situation where pages are evicted -- at first, no problem, because they are evicted least-recently-used first and it kicks out pages you aren't using anyway. But then, it kicks out the ones you are using, just to have to page them right back in moments later. Thrash city.
+
+-- https://serverfault.com/a/319818
 
 ## Usage
 
