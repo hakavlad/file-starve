@@ -1,10 +1,26 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3.9
 
 from argparse import ArgumentParser
-from os import getpid, kill
-from signal import SIGHUP, SIGINT, SIGQUIT, SIGTERM, SIGUSR1, signal
+from ctypes import CDLL
+from os import _exit
+from signal import SIGHUP, SIGINT, SIGQUIT, SIGTERM, signal
 from sys import exit
 from time import monotonic
+
+
+def mlockall():
+    """
+    """
+    MCL_CURRENT = 1
+    MCL_ONFAULT = 4
+
+    libc = CDLL(None, use_errno=True)
+    result = libc.mlockall(MCL_CURRENT | MCL_ONFAULT)
+
+    if result != 0:
+        print('cannot lock process memory with MCL_CURRENT | MCL_ONFAULT')
+    else:
+        print('process memory locked with MCL_CURRENT | MCL_ONFAULT')
 
 
 def check_meminfo():
@@ -18,45 +34,112 @@ def check_meminfo():
     return mem_free, active_file + inactive_file
 
 
-def keep_starved():
-    """
-    """
-    start_time = monotonic()
-
-    while True:
-        t = monotonic() - start_time
-
-        if t >= timeout:
-            kill(self_pid, SIGUSR1)
-        else:
-            mem_free, mem_file = check_meminfo()
-
-            if mem_free < free_dict[None]:
-                free_dict[None] = mem_free
-
-            if mem_file > f_target:
-                ex_list.append(bytearray(CHUNK))
-            else:
-                if mem_free < free_dict[None] * free_scale_factor:
-                    try:
-                        ex_list.pop()
-                    except IndexError:
-                        continue
-
-
 def starve():
     """
     """
     while True:
         mem_free, mem_file = check_meminfo()
 
-        if None not in free_dict or mem_free < free_dict[None]:
-            free_dict[None] = mem_free
-
         if mem_file > f_target:
             ex_list.append(bytearray(CHUNK))
         else:
-            keep_starved()
+            start_time = monotonic()
+
+            print('target reached')
+            print('  file lists size: {}M, free: {}M, t: 0.0s'.format(
+                round(mem_file / K, 1),
+                round(mem_free / K, 1),
+            ))
+
+            break
+
+    free_dict['min'] = mem_free
+    free_dict['max'] = mem_free
+    file_dict['min'] = mem_file
+    file_dict['max'] = mem_file
+
+    file_sum = 0
+    free_sum = 0
+    count = 0
+
+    t_old = monotonic()
+
+    while True:
+        dt = monotonic() - start_time
+
+        if dt < timeout or count == 0:
+            mem_free, mem_file = check_meminfo()
+
+            t_new = monotonic()
+            if t_new - t_old >= interval:
+                t_old = monotonic()
+
+                print('  file lists size: {}M, free: {}M, t: {}s'.format(
+                    round(mem_file / K, 1),
+                    round(mem_free / K, 1),
+                    round(dt, 1)
+                ))
+
+            if mem_free < free_dict['min']:
+                free_dict['min'] = mem_free
+
+            if mem_free > free_dict['max']:
+                free_dict['max'] = mem_free
+
+            if mem_file < file_dict['min']:
+                file_dict['min'] = mem_file
+
+            if mem_file > file_dict['max']:
+                file_dict['max'] = mem_file
+
+            file_sum += mem_file
+            free_sum += mem_free
+            count += 1
+
+            if mem_file > f_target:
+                ex_list.append(bytearray(CHUNK))
+            else:
+                if mem_free < free_dict['min'] * free_scale_factor:
+                    try:
+                        ex_list.pop()
+                    except IndexError:
+                        continue
+        else:
+
+            print('  file lists size: {}M, free: {}M, t: {}s'.format(
+                round(mem_file / K, 1),
+                round(mem_free / K, 1),
+                round(dt, 1)
+            ))
+
+            print('timeout expired: {}s have passed after reaching '
+                  'the target'.format(round(dt, 1)))
+
+            free_min = free_dict['min']
+            free_max = free_dict['max']
+
+            file_min = file_dict['min']
+            file_max = file_dict['max']
+
+            file_avg = file_sum / count
+            free_avg = free_sum / count
+
+            print(
+                'file lists and free memory sizes after reaching the target:')
+
+            print('  file: min={}M, max={}M, average={}M'.format(
+                round(file_min / K, 1),
+                round(file_max / K, 1),
+                round(file_avg / K, 1)
+            ))
+
+            print('  free: min={}M, max={}M, average={}M'.format(
+                round(free_min / K, 1),
+                round(free_max / K, 1),
+                round(free_avg / K, 1)
+            ))
+
+            _exit(0)
 
 
 def signal_handler(signum, frame):
@@ -68,21 +151,19 @@ def signal_handler(signum, frame):
     for i in sig_list:
         signal(i, signal_handler_inner)
 
-    print('\nGot signal', signum)
+    print('\ngot signal', signum)
     exit()
 
 
 parser = ArgumentParser()
 
-
 parser.add_argument(
     '-t',
     '--target',
     help='target size of file cache in MiB',
-    default=10,
+    default=15.0,
     type=float
 )
-
 
 parser.add_argument(
     '-T',
@@ -92,15 +173,13 @@ parser.add_argument(
     type=float
 )
 
-
 parser.add_argument(
     '-s',
     '--scale',
     help='MemFree scale factor',
-    default=2,
+    default=2.0,
     type=float
 )
-
 
 parser.add_argument(
     '-c',
@@ -110,15 +189,21 @@ parser.add_argument(
     type=int
 )
 
+parser.add_argument(
+    '-i',
+    '--interval',
+    help='output interval in seconds',
+    default=5.0,
+    type=float
+)
 
 args = parser.parse_args()
-
 
 target = args.target
 timeout = args.timeout
 free_scale_factor = args.scale
 chunk_size_kbytes = args.chunk
-
+interval = args.interval
 
 if target < 0:
     print('error: invalid target value (must be >= 0)')
@@ -136,6 +221,10 @@ if chunk_size_kbytes < 1:
     print('error: invalid chunk size value (must be >= 1)')
     exit(1)
 
+if interval < 0:
+    print('error: invalid interval value (must be >= 0)')
+    exit(1)
+
 
 MEMINFO = '/proc/meminfo'
 
@@ -150,9 +239,11 @@ mem_free_index = mem_list_names.index('MemFree')
 active_file_index = mem_list_names.index('Active(file)')
 inactive_file_index = mem_list_names.index('Inactive(file)')
 
+
 ex_list = []
 
 K = 1024
+M = K * K
 
 # in bytes
 CHUNK = K * chunk_size_kbytes
@@ -169,18 +260,19 @@ sig_list = [SIGTERM, SIGINT, SIGQUIT, SIGHUP]
 for i in sig_list:
     signal(i, signal_handler)
 
-self_pid = getpid()
-
 with open('/proc/self/oom_score_adj', 'w') as f:
     f.write('1000\n')
 
 free_dict = dict()
+file_dict = dict()
 
-print('Starting file-starve')
-print('  target file cache size:             {} MiB'.format(target))
-print('  timeout after reaching the target:  {} sec'.format(timeout))
-print('  MemFree scale factor:               {}'.format(free_scale_factor))
-print('  chunk size:                         {} KiB'.format(chunk_size_kbytes))
+print('starting file-starve')
 
+mlockall()
+
+print('  target file lists (LRU) size:  {} MiB'.format(target))
+print('  keep starved (timeout):        {}s'.format(timeout))
+print('  MemFree scale factor:          {}'.format(free_scale_factor))
+print('  chunk size:                    {} KiB'.format(chunk_size_kbytes))
 
 starve()
