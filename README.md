@@ -19,19 +19,37 @@ Let's talk about the elephant in the room - the Linux kernel's inability to grac
 Just run the script. Output example:
 ```
 $ file-starve
-Starting file-starve
-  target file cache size:             10 MiB
-  timeout after reaching the target:  60.0 sec
-  MemFree scale factor:               2
-  chunk size:                         64 KiB
-User defined signal 1
+starting file-starve
+process memory locked with MCL_CURRENT | MCL_ONFAULT
+  target file lists (LRU) size:  15.0 MiB
+  keep starved (timeout):        60.0s
+  MemFree scale factor:          2.0
+  chunk size:                    64 KiB
+target reached
+  file lists size: 14.7M, free: 122.2M, t: 0.0s
+  file lists size: 14.1M, free: 244.4M, t: 5.0s
+  file lists size: 15.1M, free: 199.0M, t: 10.0s
+  file lists size: 10.1M, free: 244.5M, t: 15.0s
+  file lists size: 14.8M, free: 244.5M, t: 20.0s
+  file lists size: 12.7M, free: 244.4M, t: 25.0s
+  file lists size: 12.7M, free: 244.5M, t: 30.0s
+  file lists size: 13.3M, free: 244.4M, t: 35.0s
+  file lists size: 12.5M, free: 244.4M, t: 40.0s
+  file lists size: 13.3M, free: 244.4M, t: 45.0s
+  file lists size: 14.1M, free: 244.5M, t: 50.0s
+  file lists size: 11.5M, free: 244.5M, t: 55.0s
+  file lists size: 11.5M, free: 244.5M, t: 60.0s
+timeout expired: 60.0s have passed after reaching the target
+file lists and free memory sizes after reaching the target:
+  file: min=9.0M, max=16.5M, average=12.9M
+  free: min=122.2M, max=247.9M, average=240.6M
 ```
 
 ## Options
 
 ```
 $ file-starve -h
-usage: file-starve [-h] [-t TARGET] [-T TIMEOUT] [-s SCALE] [-c CHUNK]
+usage: file-starve [-h] [-t TARGET] [-T TIMEOUT] [-s SCALE] [-c CHUNK] [-i INTERVAL]
 
 optional arguments:
   -h, --help            show this help message and exit
@@ -43,6 +61,8 @@ optional arguments:
                         MemFree scale factor
   -c CHUNK, --chunk CHUNK
                         chunk size in KiB
+  -i INTERVAL, --interval INTERVAL
+                        output interval in seconds
 ```
 
 ## Warnings
