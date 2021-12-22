@@ -3,7 +3,7 @@
 
 [![Total alerts](https://img.shields.io/lgtm/alerts/g/hakavlad/file-starve.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/hakavlad/file-starve/alerts/)
 
-Explore the impact of reducing [page cache](https://www.kernel.org/doc/html/latest/admin-guide/mm/concepts.html#page-cache) size: from moderate [thrashing](https://en.wikipedia.org/wiki/Thrashing_(computer_science)) to a complete UI freeze. This script tries to keep a specified size of LRU file lists (10 MiB by default) within a specified time (60s by default).
+Explore the impact of reducing [page cache](https://www.kernel.org/doc/html/latest/admin-guide/mm/concepts.html#page-cache) size: from moderate [thrashing](https://en.wikipedia.org/wiki/Thrashing_(computer_science)) to a complete UI freeze. This script tries to keep a specified size of LRU file lists (15 MiB by default) within a specified time (60s by default).
 
 ## Background
 
@@ -25,24 +25,25 @@ process memory locked with MCL_CURRENT | MCL_ONFAULT
   keep starved (timeout):        60.0s
   MemFree scale factor:          2.0
   chunk size:                    64 KiB
-target reached
-  file lists size: 14.7M, free: 122.2M, t: 0.0s
-  file lists size: 14.1M, free: 244.4M, t: 5.0s
-  file lists size: 15.1M, free: 199.0M, t: 10.0s
-  file lists size: 10.1M, free: 244.5M, t: 15.0s
-  file lists size: 14.8M, free: 244.5M, t: 20.0s
-  file lists size: 12.7M, free: 244.4M, t: 25.0s
-  file lists size: 12.7M, free: 244.5M, t: 30.0s
-  file lists size: 13.3M, free: 244.4M, t: 35.0s
-  file lists size: 12.5M, free: 244.4M, t: 40.0s
-  file lists size: 13.3M, free: 244.4M, t: 45.0s
-  file lists size: 14.1M, free: 244.5M, t: 50.0s
-  file lists size: 11.5M, free: 244.5M, t: 55.0s
-  file lists size: 11.5M, free: 244.5M, t: 60.0s
-timeout expired: 60.0s have passed after reaching the target
+trying to reach the target...
+target reached in 6.3s
+  file lists size: 15.0M, free: 122.1M, t: 0.0s
+  file lists size: 13.6M, free: 244.3M, t: 5.0s
+  file lists size: 11.9M, free: 244.2M, t: 10.0s
+  file lists size: 12.9M, free: 244.2M, t: 15.0s
+  file lists size: 13.0M, free: 244.2M, t: 20.0s
+  file lists size: 13.0M, free: 244.4M, t: 25.0s
+  file lists size: 14.6M, free: 244.2M, t: 30.0s
+  file lists size: 13.2M, free: 244.3M, t: 35.0s
+  file lists size: 14.3M, free: 241.4M, t: 40.0s
+  file lists size: 11.9M, free: 203.9M, t: 45.0s
+  file lists size: 13.0M, free: 241.6M, t: 50.0s
+  file lists size: 14.0M, free: 241.6M, t: 55.0s
+  file lists size: 11.6M, free: 241.5M, t: 60.0s
+kept starved during 60.0s
 file lists and free memory sizes after reaching the target:
-  file: min=9.0M, max=16.5M, average=12.9M
-  free: min=122.2M, max=247.9M, average=240.6M
+  file: min=9.5M, max=16.4M, average=13.4M
+  free: min=120.6M, max=261.6M, average=238.4M
 ```
 
 ## Options
