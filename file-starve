@@ -1,4 +1,4 @@
-#!/usr/bin/env python3.9
+#!/usr/bin/env python3
 
 from argparse import ArgumentParser
 from ctypes import CDLL
@@ -18,7 +18,7 @@ def mlockall():
     result = libc.mlockall(MCL_CURRENT | MCL_ONFAULT)
 
     if result != 0:
-        print('cannot lock process memory with MCL_CURRENT | MCL_ONFAULT')
+        print('W: cannot lock process memory with MCL_CURRENT | MCL_ONFAULT')
     else:
         print('process memory locked with MCL_CURRENT | MCL_ONFAULT')
 
@@ -37,6 +37,9 @@ def check_meminfo():
 def starve():
     """
     """
+    print('trying to reach the target...')
+    t_start = monotonic()
+
     while True:
         mem_free, mem_file = check_meminfo()
 
@@ -45,7 +48,10 @@ def starve():
         else:
             start_time = monotonic()
 
-            print('target reached')
+            print('target reached in {}s'.format(
+                round(monotonic() - t_start, 1)
+            ))
+
             print('  file lists size: {}M, free: {}M, t: 0.0s'.format(
                 round(mem_file / K, 1),
                 round(mem_free / K, 1),
@@ -112,8 +118,8 @@ def starve():
                 round(dt, 1)
             ))
 
-            print('timeout expired: {}s have passed after reaching '
-                  'the target'.format(round(dt, 1)))
+            print('kept starved during {}s'.format(
+                round(t_new - start_time, 1)))
 
             free_min = free_dict['min']
             free_max = free_dict['max']
