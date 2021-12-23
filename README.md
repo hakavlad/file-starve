@@ -14,38 +14,6 @@ Let's talk about the elephant in the room - the Linux kernel's inability to grac
 
 -- https://serverfault.com/a/319818
 
-## Usage
-
-Just run the script. Output example:
-```
-$ file-starve
-starting file-starve
-process memory locked with MCL_CURRENT | MCL_ONFAULT
-  target file lists (LRU) size:  15.0 MiB
-  keep starved (timeout):        60.0s
-  MemFree scale factor:          2.0
-  chunk size:                    64 KiB
-trying to reach the target...
-target reached in 6.3s
-  file lists size: 15.0M, free: 122.1M, t: 0.0s
-  file lists size: 13.6M, free: 244.3M, t: 5.0s
-  file lists size: 11.9M, free: 244.2M, t: 10.0s
-  file lists size: 12.9M, free: 244.2M, t: 15.0s
-  file lists size: 13.0M, free: 244.2M, t: 20.0s
-  file lists size: 13.0M, free: 244.4M, t: 25.0s
-  file lists size: 14.6M, free: 244.2M, t: 30.0s
-  file lists size: 13.2M, free: 244.3M, t: 35.0s
-  file lists size: 14.3M, free: 241.4M, t: 40.0s
-  file lists size: 11.9M, free: 203.9M, t: 45.0s
-  file lists size: 13.0M, free: 241.6M, t: 50.0s
-  file lists size: 14.0M, free: 241.6M, t: 55.0s
-  file lists size: 11.6M, free: 241.5M, t: 60.0s
-kept starved during 60.0s
-file lists and free memory sizes after reaching the target:
-  file: min=9.5M, max=16.4M, average=13.4M
-  free: min=120.6M, max=261.6M, average=238.4M
-```
-
 ## Options
 
 ```
@@ -64,6 +32,41 @@ optional arguments:
                         chunk size in KiB
   -i INTERVAL, --interval INTERVAL
                         output interval in seconds
+```
+
+## Usage
+
+Just run the script. Output example:
+```
+$ file-starve
+process memory locked with MCL_CURRENT | MCL_ONFAULT
+  target file lists (LRU) size:  15.0M
+  keep starved (timeout):        60.0s
+  MemFree scale factor:          2.0
+  chunk size:                    64K
+trying to reach the target...
+target reached in 7.1s
+  file: 14.4M, free: 136.2M, passed: 0.0s
+  file: 12.5M, free: 251.1M, passed: 10.0s
+  file: 14.1M, free: 247.5M, passed: 20.0s
+  file: 12.4M, free: 247.4M, passed: 30.0s
+  file: 15.0M, free: 241.7M, passed: 40.0s
+  file: 12.6M, free: 245.1M, passed: 50.0s
+  file: 15.3M, free: 205.0M, passed: 60.0s
+kept starved during 60.0s
+file lists and free memory sizes after reaching the target:
+  file: min=10.3M, max=17.3M, average=13.5M
+  free: min=122.5M, max=272.8M, average=237.4M
+vmstat values in the last 60.0s:
+  pgpgin:  607.8M, avg: 10.1M/s (paged in from disk)
+  pgpgout: 0.0M, avg: 0.0M/s (paged out to disk)
+  pswpin:  0.0M, avg: 0.0M/s (swapped in)
+  pswpout: 0.0M, avg: 0.0M/s (swapped out)
+pressure stall information in the last 60.0s:
+  some io:      50.6s, 84.3%
+  full io:      48.0s, 80.0%
+  some memory:  14.9s, 24.8%
+  full memory:  14.7s, 24.5%
 ```
 
 ## Warnings
