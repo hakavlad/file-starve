@@ -2,10 +2,23 @@
 
 from argparse import ArgumentParser
 from ctypes import CDLL
-from os import _exit
+from os import _exit, sysconf, sysconf_names
 from signal import SIGHUP, SIGINT, SIGQUIT, SIGTERM, signal
 from sys import exit
 from time import monotonic
+
+
+def signal_handler(signum, frame):
+    """
+    """
+    def signal_handler_inner(signum, frame):
+        pass
+
+    for i in sig_list:
+        signal(i, signal_handler_inner)
+
+    print('\ngot signal', signum)
+    exit()
 
 
 def mlockall():
@@ -26,12 +39,47 @@ def mlockall():
 def check_meminfo():
     """
     """
-    fd[None].seek(0)
-    m_list = fd[None].read().decode().split(' kB\n')
+    values['fd_mi'].seek(0)
+    m_list = values['fd_mi'].read().decode().split(' kB\n')
     mem_free = int(m_list[mem_free_index].split(':')[1])
     active_file = int(m_list[active_file_index].split(':')[1])
     inactive_file = int(m_list[inactive_file_index].split(':')[1])
     return mem_free, active_file + inactive_file
+
+
+def check_stats():
+    """
+    return MiB
+    """
+    values['fd_vs'].seek(0)
+    lines = values['fd_vs'].read().decode().split('\n')
+
+    pgpgin = int(lines[pgpgin_index].split(' ')[1]) / K
+    pgpgout = int(lines[pgpgout_index].split(' ')[1]) / K
+
+    pswpin = int(lines[pswpin_index].split(' ')[1]) * SC_PAGESIZE / M
+    pswpout = int(lines[pswpout_index].split(' ')[1]) * SC_PAGESIZE / M
+
+    return (pgpgin, pgpgout, pswpin, pswpout)
+
+
+def total_psi():
+    """
+    return microseconds
+    """
+    values['fd_psi_i'].seek(0)
+    values['fd_psi_m'].seek(0)
+
+    some_i, full_i, _ = values['fd_psi_i'].read().decode().split('\n')
+    some_m, full_m, _ = values['fd_psi_m'].read().decode().split('\n')
+
+    total_some_i = int(some_i.partition('total=')[2])
+    total_full_i = int(full_i.partition('total=')[2])
+
+    total_some_m = int(some_m.partition('total=')[2])
+    total_full_m = int(full_m.partition('total=')[2])
+
+    return (total_some_i, total_full_i, total_some_m, total_full_m)
 
 
 def starve():
@@ -48,21 +96,27 @@ def starve():
         else:
             start_time = monotonic()
 
+            pgpgin0, pgpgout0, pswpin0, pswpout0 = check_stats()
+
+            if PSI_OK:
+                (total_some_i0, total_full_i0, total_some_m0, total_full_m0
+                 ) = total_psi()
+
             print('target reached in {}s'.format(
                 round(monotonic() - t_start, 1)
             ))
 
-            print('  file lists size: {}M, free: {}M, t: 0.0s'.format(
+            print('  file: {}M, free: {}M, passed: 0.0s'.format(
                 round(mem_file / K, 1),
                 round(mem_free / K, 1),
             ))
 
             break
 
-    free_dict['min'] = mem_free
-    free_dict['max'] = mem_free
-    file_dict['min'] = mem_file
-    file_dict['max'] = mem_file
+    values['free_min'] = mem_free
+    values['free_max'] = mem_free
+    values['file_min'] = mem_file
+    values['file_max'] = mem_file
 
     file_sum = 0
     free_sum = 0
@@ -80,23 +134,23 @@ def starve():
             if t_new - t_old >= interval:
                 t_old = monotonic()
 
-                print('  file lists size: {}M, free: {}M, t: {}s'.format(
+                print('  file: {}M, free: {}M, passed: {}s'.format(
                     round(mem_file / K, 1),
                     round(mem_free / K, 1),
                     round(dt, 1)
                 ))
 
-            if mem_free < free_dict['min']:
-                free_dict['min'] = mem_free
+            if mem_free < values['free_min']:
+                values['free_min'] = mem_free
 
-            if mem_free > free_dict['max']:
-                free_dict['max'] = mem_free
+            if mem_free > values['free_max']:
+                values['free_max'] = mem_free
 
-            if mem_file < file_dict['min']:
-                file_dict['min'] = mem_file
+            if mem_file < values['file_min']:
+                values['file_min'] = mem_file
 
-            if mem_file > file_dict['max']:
-                file_dict['max'] = mem_file
+            if mem_file > values['file_max']:
+                values['file_max'] = mem_file
 
             file_sum += mem_file
             free_sum += mem_free
@@ -105,27 +159,42 @@ def starve():
             if mem_file > f_target:
                 ex_list.append(bytearray(CHUNK))
             else:
-                if mem_free < free_dict['min'] * free_scale_factor:
+                if mem_free < values['free_min'] * free_scale_factor:
                     try:
                         ex_list.pop()
                     except IndexError:
                         continue
         else:
+            pgpgin1, pgpgout1, pswpin1, pswpout1 = check_stats()
 
-            print('  file lists size: {}M, free: {}M, t: {}s'.format(
+            if PSI_OK:
+                (total_some_i1, total_full_i1, total_some_m1, total_full_m1
+                 ) = total_psi()
+
+                total_some_i_sec = (total_some_i1 - total_some_i0) / m
+                total_full_i_sec = (total_full_i1 - total_full_i0) / m
+                total_some_m_sec = (total_some_m1 - total_some_m0) / m
+                total_full_m_sec = (total_full_m1 - total_full_m0) / m
+
+            pgpgin = pgpgin1 - pgpgin0
+            pgpgout = pgpgout1 - pgpgout0
+            pswpin = pswpin1 - pswpin0
+            pswpout = pswpout1 - pswpout0
+
+            print('  file: {}M, free: {}M, passed: {}s'.format(
                 round(mem_file / K, 1),
                 round(mem_free / K, 1),
                 round(dt, 1)
             ))
 
             print('kept starved during {}s'.format(
-                round(t_new - start_time, 1)))
+                round(dt, 1)))
 
-            free_min = free_dict['min']
-            free_max = free_dict['max']
+            free_min = values['free_min']
+            free_max = values['free_max']
 
-            file_min = file_dict['min']
-            file_max = file_dict['max']
+            file_min = values['file_min']
+            file_max = values['file_max']
 
             file_avg = file_sum / count
             free_avg = free_sum / count
@@ -145,20 +214,35 @@ def starve():
                 round(free_avg / K, 1)
             ))
 
+            print('vmstat values in the last {}s:'.format(round(dt, 1)))
+            print('  pgpgin:  {}M, avg: {}M/s (paged in from disk)\n'
+                  '  pgpgout: {}M, avg: {}M/s (paged out to disk)\n'
+                  '  pswpin:  {}M, avg: {}M/s (swapped in)\n'
+                  '  pswpout: {}M, avg: {}M/s (swapped out)'.format(
+                      round(pgpgin, 1), round(pgpgin / dt, 1),
+                      round(pgpgout, 1), round(pgpgout / dt, 1),
+                      round(pswpin, 1), round(pswpin / dt, 1),
+                      round(pswpout, 1), round(pswpout / dt, 1)
+                  ))
+
+            if PSI_OK:
+                print('pressure stall information in the last {}s:\n'
+                      '  some io:      {}s, {}%\n'
+                      '  full io:      {}s, {}%\n'
+                      '  some memory:  {}s, {}%\n'
+                      '  full memory:  {}s, {}%'.format(
+                          round(dt, 1),
+                          round(total_some_i_sec, 1),
+                          round(total_some_i_sec / dt * 100, 1),
+                          round(total_full_i_sec, 1),
+                          round(total_full_i_sec / dt * 100, 1),
+                          round(total_some_m_sec, 1),
+                          round(total_some_m_sec / dt * 100, 1),
+                          round(total_full_m_sec, 1),
+                          round(total_full_m_sec / dt * 100, 1)
+                      ))
+
             _exit(0)
-
-
-def signal_handler(signum, frame):
-    """
-    """
-    def signal_handler_inner(signum, frame):
-        pass
-
-    for i in sig_list:
-        signal(i, signal_handler_inner)
-
-    print('\ngot signal', signum)
-    exit()
 
 
 parser = ArgumentParser()
@@ -199,7 +283,7 @@ parser.add_argument(
     '-i',
     '--interval',
     help='output interval in seconds',
-    default=5.0,
+    default=10.0,
     type=float
 )
 
@@ -232,7 +316,29 @@ if interval < 0:
     exit(1)
 
 
+K = 1024
+M = K * K
+m = 1000000
+
+ex_list = []
+values = dict()
+
+SC_PAGESIZE = sysconf(sysconf_names['SC_PAGESIZE'])
+
+
+# in bytes
+CHUNK = K * chunk_size_kbytes
+
+# MiB -> KiB
+f_target = K * target
+
 MEMINFO = '/proc/meminfo'
+
+VMSTAT = '/proc/vmstat'
+
+PSI_MEMORY = '/proc/pressure/memory'
+
+PSI_IO = '/proc/pressure/io'
 
 with open(MEMINFO) as f:
     m_list = f.readlines()
@@ -246,20 +352,35 @@ active_file_index = mem_list_names.index('Active(file)')
 inactive_file_index = mem_list_names.index('Inactive(file)')
 
 
-ex_list = []
+values['fd_mi'] = open(MEMINFO, 'rb', buffering=0)
 
-K = 1024
-M = K * K
+values['fd_vs'] = open(VMSTAT, 'rb', buffering=0)
+lines = values['fd_vs'].read().decode().split('\n')
+for n, line in enumerate(lines):
 
-# in bytes
-CHUNK = K * chunk_size_kbytes
+    if line.startswith('pgpgin '):
+        pgpgin_index = n
 
-# MiB -> KiB
-f_target = K * target
+    if line.startswith('pgpgout '):
+        pgpgout_index = n
 
-fd = dict()
+    if line.startswith('pswpin '):
+        pswpin_index = n
 
-fd[None] = open(MEMINFO, 'rb', buffering=0)
+    if line.startswith('pswpout '):
+        pswpout_index = n
+        break
+
+
+PSI_OK = True
+try:
+    values['fd_psi_i'] = open(PSI_IO, 'rb', buffering=0)
+    values['fd_psi_m'] = open(PSI_MEMORY, 'rb', buffering=0)
+    values['fd_psi_i'].read(1)
+except Exception as e:
+    PSI_OK = False
+    print(e)
+
 
 sig_list = [SIGTERM, SIGINT, SIGQUIT, SIGHUP]
 
@@ -269,16 +390,15 @@ for i in sig_list:
 with open('/proc/self/oom_score_adj', 'w') as f:
     f.write('1000\n')
 
-free_dict = dict()
-file_dict = dict()
 
 print('starting file-starve')
 
 mlockall()
 
-print('  target file lists (LRU) size:  {} MiB'.format(target))
+print('  target file lists (LRU) size:  {}M'.format(target))
 print('  keep starved (timeout):        {}s'.format(timeout))
 print('  MemFree scale factor:          {}'.format(free_scale_factor))
-print('  chunk size:                    {} KiB'.format(chunk_size_kbytes))
+print('  chunk size:                    {}K'.format(chunk_size_kbytes))
 
 starve()
+
