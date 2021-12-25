@@ -355,7 +355,7 @@ parser.add_argument(
 parser.add_argument(
     '-d',
     '--dev',
-    help='device name to check I/O stats',
+    help='device name to track I/O stats',
     default='',
     type=str
 )
@@ -466,10 +466,10 @@ except Exception:
 
 if dev == '':
     DEV_OK = False
-    print('W: device name to check I/O stats is not set')
+    print('W: device name to track I/O stats is not set')
 else:
     DEV_OK = True
-    print('device to check I/O stats:', dev)
+    print('device name to track I/O stats:', dev)
 
 if dev.isdigit():
     print('W: invalid device name: {}'.format(dev))
