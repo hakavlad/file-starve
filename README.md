@@ -32,7 +32,7 @@ optional arguments:
                         chunk size in KiB
   -i INTERVAL, --interval INTERVAL
                         output interval in seconds
-  -d DEV, --dev DEV     device name to check I/O stats
+  -d DEV, --dev DEV     device name to track I/O stats
 ```
 
 ## Usage
@@ -41,7 +41,7 @@ Just run the script. Output example:
 ```
 $ file-starve
 starting file-starve
-W: device name to check I/O stats is not set
+W: device name to track I/O stats is not set
 process memory locked with MCL_CURRENT | MCL_ONFAULT
   target file LRU lists size: 20.0M
   keep starved (timeout):     60.0s
@@ -76,7 +76,7 @@ Optionally, you can specify a device name for tracking I/O stats:
 ```
 $ file-starve -t 40 -T 30 -i 15 -c 32 -d sdb -s 1.5
 starting file-starve
-device to check I/O stats: sdb
+device name to track I/O stats: sdb
 process memory locked with MCL_CURRENT | MCL_ONFAULT
   target file LRU lists size: 40.0M
   keep starved (timeout):     30.0s
