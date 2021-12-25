@@ -80,6 +80,40 @@ def check_psi():
     return (total_some_i, total_full_i, total_some_m, total_full_m)
 
 
+def check_diskstats():
+    """
+    """
+    fd[DISKSTATS].seek(0)
+
+    dev_lines = fd[DISKSTATS].read().decode().split('\n')
+
+    dev_ok = False
+    for dev_line in dev_lines:
+        if DEV_SEPARATOR in dev_line:
+            _, _, line_rpart = dev_line.rpartition(DEV_SEPARATOR)
+            dev_ok = True
+
+    if not dev_ok:
+        print('device not found')
+        print('check /proc/diskstats to find available devices')
+        exit(1)
+
+    (r_ios, _, r_sectors, r_ticks, w_ios, _, w_sectors, w_ticks, _, active
+     ) = line_rpart.split()[:10]
+
+    r_ios = int(r_ios)
+    r_mib = int(r_sectors) * SECTOR / M
+    r_wait = int(r_ticks) / T
+
+    w_ios = int(w_ios)
+    w_mib = int(w_sectors) * SECTOR / M
+    w_wait = int(w_ticks) / T
+
+    active = int(active) / T
+
+    return (r_ios, r_mib, r_wait, w_ios, w_mib, w_wait, active)
+
+
 def restrict_file_lists():
     """
     """
@@ -102,6 +136,10 @@ def restrict_file_lists():
             if PSI_OK:
                 (total_some_i0, total_full_i0, total_some_m0, total_full_m0
                  ) = check_psi()
+
+            if DEV_OK:
+                (r_ios0, r_mib0, r_wait0, w_ios0, w_mib0, w_wait0, active0
+                 ) = check_diskstats()
 
             dt = monotonic() - t_start
             print('target reached in {}s'.format(round(dt, 1)))
@@ -162,20 +200,29 @@ def restrict_file_lists():
                         continue
         else:
             pgpgin1, pgpgout1, pswpin1, pswpout1 = check_vmstat()
+            pgpgin = pgpgin1 - pgpgin0
+            pgpgout = pgpgout1 - pgpgout0
+            pswpin = pswpin1 - pswpin0
+            pswpout = pswpout1 - pswpout0
 
             if PSI_OK:
                 (total_some_i1, total_full_i1, total_some_m1, total_full_m1
                  ) = check_psi()
-
                 total_some_i_sec = (total_some_i1 - total_some_i0) / m
                 total_full_i_sec = (total_full_i1 - total_full_i0) / m
                 total_some_m_sec = (total_some_m1 - total_some_m0) / m
                 total_full_m_sec = (total_full_m1 - total_full_m0) / m
 
-            pgpgin = pgpgin1 - pgpgin0
-            pgpgout = pgpgout1 - pgpgout0
-            pswpin = pswpin1 - pswpin0
-            pswpout = pswpout1 - pswpout0
+            if DEV_OK:
+                (r_ios1, r_mib1, r_wait1, w_ios1, w_mib1, w_wait1, active1
+                 ) = check_diskstats()
+                r_ios = r_ios1 - r_ios0
+                r_mib = r_mib1 - r_mib0
+                r_wait = r_wait1 - r_wait0
+                w_ios = w_ios1 - w_ios0
+                w_mib = w_mib1 - w_mib0
+                w_wait = w_wait1 - w_wait0
+                active = active1 - active0
 
             print('  file: {}M, free: {}M, passed: {}s'.format(
                 round(mem_file / K, 1),
@@ -204,11 +251,12 @@ def restrict_file_lists():
                 round(mem_free_avg / K, 1)
             ))
 
-            print('vmstat I/O metrics for the last {}s:'.format(round(dt, 1)))
-            print('  pgpgin:  {}M, {}M/s\n'
+            print('vmstat I/O metrics for the last {}s:\n'
+                  '  pgpgin:  {}M, {}M/s\n'
                   '  pgpgout: {}M, {}M/s\n'
                   '  pswpin:  {}M, {}M/s\n'
                   '  pswpout: {}M, {}M/s'.format(
+                      round(dt, 1),
                       round(pgpgin, 1), round(pgpgin / dt, 1),
                       round(pgpgout, 1), round(pgpgout / dt, 1),
                       round(pswpin, 1), round(pswpin / dt, 1),
@@ -230,6 +278,33 @@ def restrict_file_lists():
                           round(total_some_m_sec / dt * 100, 1),
                           round(total_full_m_sec, 1),
                           round(total_full_m_sec / dt * 100, 1)
+                      ))
+
+            if DEV_OK:
+                print('I/O statistics for {} device in the last {}s:\n'
+                      '  util: {}s, {}%\n'
+                      '  read: {}M, {}M/s\n'
+                      '  read: {} requests processed, {} rp/s\n'
+                      '  read: await {}s, {}%\n'
+                      '  write: {}M, {}M/s\n'
+                      '  write: {} requests processed, {} rp/s\n'
+                      '  write: await {}s, {}%'.format(
+                          dev,
+                          round(dt, 1),
+                          round(active, 1),
+                          round(active / dt * 100, 1),
+                          round(r_mib, 1),
+                          round(r_mib / dt, 1),
+                          r_ios,
+                          round(r_ios / dt, 1),
+                          round(r_wait, 1),
+                          round(r_wait / dt * 100, 1),
+                          round(w_mib, 1),
+                          round(w_mib / dt, 1),
+                          w_ios,
+                          round(w_ios / dt, 1),
+                          round(w_wait, 1),
+                          round(w_wait / dt * 100, 1)
                       ))
 
             _exit(0)
@@ -277,6 +352,15 @@ parser.add_argument(
     type=float
 )
 
+parser.add_argument(
+    '-d',
+    '--dev',
+    help='device name to check I/O stats',
+    default='',
+    type=str
+)
+
+
 args = parser.parse_args()
 
 target = args.target
@@ -284,6 +368,7 @@ timeout = args.timeout
 free_scale_factor = args.scale
 chunk_size_kbytes = args.chunk
 interval = args.interval
+dev = args.dev
 
 if target < 0:
     print('error: invalid target value (must be >= 0)')
@@ -332,21 +417,21 @@ PSI_MEMORY = '/proc/pressure/memory'
 PSI_IO = '/proc/pressure/io'
 
 
-with open(MEMINFO) as f:
-    m_list = f.readlines()
-
-mem_list_names = []
-for s in m_list:
-    mem_list_names.append(s.split(':')[0])
-
-mem_free_index = mem_list_names.index('MemFree')
-active_file_index = mem_list_names.index('Active(file)')
-inactive_file_index = mem_list_names.index('Inactive(file)')
-
-
 fd = {}
 
 fd[MEMINFO] = open(MEMINFO, 'rb', buffering=0)
+
+meminfo_list = fd[MEMINFO].read().decode().split('\n')
+
+meminfo_list_names = []
+
+for line in meminfo_list:
+    meminfo_list_names.append(line.split(':')[0])
+
+mem_free_index = meminfo_list_names.index('MemFree')
+active_file_index = meminfo_list_names.index('Active(file)')
+inactive_file_index = meminfo_list_names.index('Inactive(file)')
+
 
 fd[VMSTAT] = open(VMSTAT, 'rb', buffering=0)
 
@@ -369,6 +454,7 @@ for n, line in enumerate(lines):
 
 
 PSI_OK = True
+
 try:
     fd[PSI_IO] = open(PSI_IO, 'rb', buffering=0)
     fd[PSI_MEMORY] = open(PSI_MEMORY, 'rb', buffering=0)
@@ -376,6 +462,42 @@ try:
 except Exception:
     PSI_OK = False
     print('W: PSI mertics are not available')
+
+
+if dev == '':
+    DEV_OK = False
+    print('W: device name to check I/O stats is not set')
+else:
+    DEV_OK = True
+    print('device to check I/O stats:', dev)
+
+if dev.isdigit():
+    print('W: invalid device name: {}'.format(dev))
+    print('check /proc/diskstats to find available devices')
+    exit(1)
+
+if DEV_OK:
+    DEV_SEPARATOR = ' ' + dev + ' '
+    T = 1000
+    SECTOR = 512
+    DISKSTATS = '/proc/diskstats'
+
+if DEV_OK:
+    try:
+        fd[DISKSTATS] = open(DISKSTATS, 'rb', buffering=0)
+    except Exception as e:
+        DEV_OK = False
+        print(e)
+
+if DEV_OK:
+    try:
+        fd[DISKSTATS].read()
+    except Exception as e:
+        DEV_OK = False
+        print(e)
+
+if DEV_OK:
+    check_diskstats()
 
 
 sig_list = [SIGTERM, SIGINT, SIGQUIT, SIGHUP]
