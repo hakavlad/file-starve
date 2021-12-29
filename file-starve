@@ -2,15 +2,23 @@
 
 from argparse import ArgumentParser
 from ctypes import CDLL
-from os import _exit, sysconf, sysconf_names
+from os import _exit, listdir, sysconf, sysconf_names
 from signal import SIGHUP, SIGINT, SIGQUIT, SIGTERM, signal
 from time import monotonic
+
+
+def log(msg):
+    """
+    """
+    print(msg)
+    if separate_log:
+        logging.info(msg)
 
 
 def signal_handler(signum, frame):
     """
     """
-    print('\ngot signal', signum)
+    log('\ngot signal {}'.format(signum))
     _exit(1)
 
 
@@ -26,11 +34,11 @@ def mlockall():
     if result != 0:
         result = libc.mlockall(MCL_CURRENT)
         if result != 0:
-            print('W: cannot lock current process memory')
+            log('W: cannot lock current process memory')
         else:
-            print('process memory locked with MCL_CURRENT')
+            log('process memory locked with MCL_CURRENT')
     else:
-        print('process memory locked with MCL_CURRENT | MCL_ONFAULT')
+        log('process memory locked with MCL_CURRENT | MCL_ONFAULT')
 
 
 def check_meminfo():
@@ -94,8 +102,8 @@ def check_diskstats():
             dev_ok = True
 
     if not dev_ok:
-        print('device not found')
-        print('check /proc/diskstats to find available devices')
+        log('device not found')
+        log('check /proc/diskstats to find available devices')
         exit(1)
 
     (r_ios, _, r_sectors, r_ticks, w_ios, _, w_sectors, w_ticks, _, active
@@ -114,10 +122,42 @@ def check_diskstats():
     return (r_ios, r_mib, r_wait, w_ios, w_mib, w_wait, active)
 
 
+def check_stime(pid):
+    """
+    """
+    fd[pid].seek(0)
+    try:
+        stime = int(fd[pid].read().decode('utf-8', 'ignore').rpartition(')')[
+            2].split(' ')[13])
+    except ProcessLookupError:
+        stime = 0
+    return stime
+
+
+def get_kswapd():
+    """
+    """
+    kswapd_list = []
+    proc_list = listdir('/proc')
+    for pid in proc_list:
+        try:
+            with open('/proc/{}/stat'.format(pid), 'rb', buffering=0) as f:
+                a, _, b = f.read().decode('utf-8', 'ignore').rpartition(')')
+                minflt = int(b.split(' ')[8])
+                # kthreads have zero minflt
+                if minflt == 0:
+                    name = a.partition('(')[2]
+                    if name.startswith('kswapd'):
+                        kswapd_list.append([pid, name])
+        except Exception:
+            pass
+    return kswapd_list
+
+
 def restrict_file_lists():
     """
     """
-    print('trying to reach the target...')
+    log('trying to reach the target...')
 
     storage = []
 
@@ -141,9 +181,15 @@ def restrict_file_lists():
                 (r_ios0, r_mib0, r_wait0, w_ios0, w_mib0, w_wait0, active0
                  ) = check_diskstats()
 
+            if KSWAPD_OK:
+                for i in kswapd_list:
+                    pid = i[0]
+                    stime = check_stime(pid)
+                    i.append(stime)
+
             dt = monotonic() - t_start
-            print('target reached in {}s'.format(round(dt, 1)))
-            print('  file: {}M, free: {}M, passed: 0.0s'.format(
+            log('target reached in {}s'.format(round(dt, 1)))
+            log('  file: {}M, free: {}M, passed: 0.0s'.format(
                 round(mem_file / K, 1),
                 round(mem_free / K, 1),
             ))
@@ -167,7 +213,7 @@ def restrict_file_lists():
             if t_new - t_old >= interval:
                 t_old = monotonic()
 
-                print('  file: {}M, free: {}M, passed: {}s'.format(
+                log('  file: {}M, free: {}M, passed: {}s'.format(
                     round(mem_file / K, 1),
                     round(mem_free / K, 1),
                     round(dt, 1)
@@ -224,88 +270,111 @@ def restrict_file_lists():
                 w_wait = w_wait1 - w_wait0
                 active = active1 - active0
 
-            print('  file: {}M, free: {}M, passed: {}s'.format(
+            if KSWAPD_OK:
+                for i in kswapd_list:
+                    pid = i[0]
+                    stime = check_stime(pid)
+                    i.append(stime)
+
+            log('  file: {}M, free: {}M, passed: {}s'.format(
                 round(mem_file / K, 1),
                 round(mem_free / K, 1),
                 round(dt, 1)
             ))
 
-            print('kept starved during {}s'.format(
+            log('kept starved during {}s'.format(
                 round(dt, 1)))
 
             mem_file_avg = mem_file_sum / count
             mem_free_avg = mem_free_sum / count
 
-            print(
+            log(
                 'file lists and free memory sizes after reaching the target:')
 
-            print('  file: min={}M, max={}M, average={}M'.format(
+            log('  file: min={}M, max={}M, average={}M'.format(
                 round(mem_file_min / K, 1),
                 round(mem_file_max / K, 1),
                 round(mem_file_avg / K, 1)
             ))
 
-            print('  free: min={}M, max={}M, average={}M'.format(
+            log('  free: min={}M, max={}M, average={}M'.format(
                 round(mem_free_min / K, 1),
                 round(mem_free_max / K, 1),
                 round(mem_free_avg / K, 1)
             ))
 
-            print('vmstat I/O metrics for the last {}s:\n'
-                  '  pgpgin:  {}M, {}M/s\n'
-                  '  pgpgout: {}M, {}M/s\n'
-                  '  pswpin:  {}M, {}M/s\n'
-                  '  pswpout: {}M, {}M/s'.format(
-                      round(dt, 1),
-                      round(pgpgin, 1), round(pgpgin / dt, 1),
-                      round(pgpgout, 1), round(pgpgout / dt, 1),
-                      round(pswpin, 1), round(pswpin / dt, 1),
-                      round(pswpout, 1), round(pswpout / dt, 1)
-                  ))
+            log('vmstat I/O metrics for the last {}s:\n'
+                '  pgpgin:  {}M, {}M/s\n'
+                '  pgpgout: {}M, {}M/s\n'
+                '  pswpin:  {}M, {}M/s\n'
+                '  pswpout: {}M, {}M/s'.format(
+                    round(dt, 1),
+                    round(pgpgin, 1), round(pgpgin / dt, 1),
+                    round(pgpgout, 1), round(pgpgout / dt, 1),
+                    round(pswpin, 1), round(pswpin / dt, 1),
+                    round(pswpout, 1), round(pswpout / dt, 1)
+                ))
 
             if PSI_OK:
-                print('PSI metrics for the last {}s:\n'
-                      '  some io:     {}s, {}%\n'
-                      '  full io:     {}s, {}%\n'
-                      '  some memory: {}s, {}%\n'
-                      '  full memory: {}s, {}%'.format(
-                          round(dt, 1),
-                          round(total_some_i_sec, 1),
-                          round(total_some_i_sec / dt * 100, 1),
-                          round(total_full_i_sec, 1),
-                          round(total_full_i_sec / dt * 100, 1),
-                          round(total_some_m_sec, 1),
-                          round(total_some_m_sec / dt * 100, 1),
-                          round(total_full_m_sec, 1),
-                          round(total_full_m_sec / dt * 100, 1)
-                      ))
+                log('PSI metrics for the last {}s:\n'
+                    '  some io:     {}s, {}%\n'
+                    '  full io:     {}s, {}%\n'
+                    '  some memory: {}s, {}%\n'
+                    '  full memory: {}s, {}%'.format(
+                        round(dt, 1),
+                        round(total_some_i_sec, 1),
+                        round(total_some_i_sec / dt * 100, 1),
+                        round(total_full_i_sec, 1),
+                        round(total_full_i_sec / dt * 100, 1),
+                        round(total_some_m_sec, 1),
+                        round(total_some_m_sec / dt * 100, 1),
+                        round(total_full_m_sec, 1),
+                        round(total_full_m_sec / dt * 100, 1)
+                    ))
 
             if DEV_OK:
-                print('I/O statistics for {} device in the last {}s:\n'
-                      '  util: {}s, {}%\n'
-                      '  read: {}M, {}M/s\n'
-                      '  read: {} requests processed, {} rp/s\n'
-                      '  read: await {}s, {}%\n'
-                      '  write: {}M, {}M/s\n'
-                      '  write: {} requests processed, {} rp/s\n'
-                      '  write: await {}s, {}%'.format(
-                          dev,
-                          round(dt, 1),
-                          round(active, 1),
-                          round(active / dt * 100, 1),
-                          round(r_mib, 1),
-                          round(r_mib / dt, 1),
-                          r_ios,
-                          round(r_ios / dt, 1),
-                          round(r_wait, 1),
-                          round(r_wait / dt * 100, 1),
-                          round(w_mib, 1),
-                          round(w_mib / dt, 1),
-                          w_ios,
-                          round(w_ios / dt, 1),
-                          round(w_wait, 1),
-                          round(w_wait / dt * 100, 1)
-                      ))
+                log('I/O statistics for {} device in the last {}s:\n'
+                    '  util: {}s, {}%\n'
+                    '  read: {}M, {}M/s\n'
+                    '  read: {} requests processed, {} rp/s\n'
+                    '  read: await {}s, {}%\n'
+                    '  write: {}M, {}M/s\n'
+                    '  write: {} requests processed, {} rp/s\n'
+                    '  write: await {}s, {}%'.format(
+                        dev,
+                        round(dt, 1),
+                        round(active, 1),
+                        round(active / dt * 100, 1),
+                        round(r_mib, 1),
+                        round(r_mib / dt, 1),
+                        r_ios,
+                        round(r_ios / dt, 1),
+                        round(r_wait, 1),
+                        round(r_wait / dt * 100, 1),
+                        round(w_mib, 1),
+                        round(w_mib / dt, 1),
+                        w_ios,
+                        round(w_ios / dt, 1),
+                        round(w_wait, 1),
+                        round(w_wait / dt * 100, 1)
+                    ))
+
+            if KSWAPD_OK:
+                log('kswapd stime for the last {}s:'.format(round(dt, 1)))
+                for i in kswapd_list:
+                    pid = i[0]
+                    name = i[1]
+                    stime0 = i[2]
+                    stime1 = i[3]
+                    stime = stime1 - stime0
+                    stime_sec = stime / SC_CLK_TCK
+                    log('  {} (PID={}): {} ticks, {}s, {}%'.format(
+                        name,
+                        pid,
+                        stime,
+                        round(stime_sec, 1),
+                        round(stime_sec / dt * 100, 1)
+                    ))
 
             _exit(0)
 
@@ -360,6 +429,21 @@ parser.add_argument(
     type=str
 )
 
+parser.add_argument(
+    '-l',
+    '--log',
+    help='path to log file',
+    default=None,
+    type=str
+)
+
+parser.add_argument(
+    '-L',
+    '--lock',
+    help='lock current process memory',
+    default=1,
+    type=int
+)
 
 args = parser.parse_args()
 
@@ -369,29 +453,60 @@ free_scale_factor = args.scale
 chunk_size_kbytes = args.chunk
 interval = args.interval
 dev = args.dev
+log_file = args.log
+lock = args.lock
+
+
+if log_file is None:
+    separate_log = False
+else:
+    separate_log = True
+    import logging
+
+if log_file is not None:
+    logstring = 'log file: {}, '.format(log_file)
+else:
+    logstring = 'log file is not set, '
+
+
+if separate_log:
+    try:
+        logging.basicConfig(
+            filename=log_file,
+            level=logging.INFO,
+            format="%(asctime)s: %(message)s")
+    except Exception as e:
+        print(e)
+        exit(1)
+
 
 if target < 0:
-    print('error: invalid target value (must be >= 0)')
+    log('error: invalid target value (must be >= 0)')
     exit(1)
 
 if timeout < 0:
-    print('error: invalid timeout value (must be >= 0)')
+    log('error: invalid timeout value (must be >= 0)')
     exit(1)
 
 if free_scale_factor < 1:
-    print('error: invalid scale factor value (must be >= 1)')
+    log('error: invalid scale factor value (must be >= 1)')
     exit(1)
 
 if chunk_size_kbytes < 1:
-    print('error: invalid chunk size value (must be >= 1)')
+    log('error: invalid chunk size value (must be >= 1)')
     exit(1)
 
 if interval < 0:
-    print('error: invalid interval value (must be >= 0)')
+    log('error: invalid interval value (must be >= 0)')
     exit(1)
 
 
-print('starting file-starve')
+if lock < 0 or lock > 1:
+    log('error: invalid --lock option value (must be 0 or 1)')
+    exit(1)
+
+
+log('starting file-starve')
 
 
 K = 1024
@@ -461,19 +576,19 @@ try:
     fd[PSI_IO].read(1)
 except Exception:
     PSI_OK = False
-    print('W: PSI mertics are not available')
+    log('W: PSI mertics are not available')
 
 
 if dev == '':
     DEV_OK = False
-    print('W: device name to track I/O stats is not set')
+    log('W: device name to track I/O stats is not set')
 else:
     DEV_OK = True
-    print('device name to track I/O stats:', dev)
+    log('device name to track I/O stats:', dev)
 
 if dev.isdigit():
-    print('W: invalid device name: {}'.format(dev))
-    print('check /proc/diskstats to find available devices')
+    log('W: invalid device name: {}'.format(dev))
+    log('check /proc/diskstats to find available devices')
     exit(1)
 
 if DEV_OK:
@@ -487,17 +602,30 @@ if DEV_OK:
         fd[DISKSTATS] = open(DISKSTATS, 'rb', buffering=0)
     except Exception as e:
         DEV_OK = False
-        print(e)
+        log(e)
 
 if DEV_OK:
     try:
         fd[DISKSTATS].read()
     except Exception as e:
         DEV_OK = False
-        print(e)
+        log(e)
 
 if DEV_OK:
     check_diskstats()
+
+
+kswapd_list = get_kswapd()
+
+if len(kswapd_list) > 0:
+    KSWAPD_OK = True
+    SC_CLK_TCK = sysconf(sysconf_names['SC_CLK_TCK'])
+    for i in kswapd_list:
+        pid = i[0]
+        fd[pid] = open('/proc/{}/stat'.format(pid), 'rb', buffering=0)
+else:
+    KSWAPD_OK = False
+    log('W: kswapd not found')
 
 
 sig_list = [SIGTERM, SIGINT, SIGQUIT, SIGHUP]
@@ -509,12 +637,12 @@ for i in sig_list:
 with open('/proc/self/oom_score_adj', 'w') as f:
     f.write('1000\n')
 
+if lock == 1:
+    mlockall()
 
-mlockall()
-
-print('  target file LRU lists size: {}M'.format(target))
-print('  keep starved (timeout):     {}s'.format(timeout))
-print('  MemFree scale factor:       {}'.format(free_scale_factor))
-print('  chunk size:                 {}K'.format(chunk_size_kbytes))
+log('  target file LRU lists size: {}M'.format(target))
+log('  keep starved (timeout):     {}s'.format(timeout))
+log('  MemFree scale factor:       {}'.format(free_scale_factor))
+log('  chunk size:                 {}K'.format(chunk_size_kbytes))
 
 restrict_file_lists()
