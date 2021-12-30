@@ -47,15 +47,16 @@ def check_meminfo():
     """
     fd[MEMINFO].seek(0)
     m_list = fd[MEMINFO].read().decode().split(' kB\n')
+
     mem_free = int(m_list[mem_free_index].split(':')[1])
     active_file = int(m_list[active_file_index].split(':')[1])
     inactive_file = int(m_list[inactive_file_index].split(':')[1])
+
     return mem_free, active_file + inactive_file
 
 
 def check_vmstat():
     """
-    return MiB
     """
     fd[VMSTAT].seek(0)
     lines = fd[VMSTAT].read().decode().split('\n')
@@ -63,10 +64,22 @@ def check_vmstat():
     pgpgin = int(lines[pgpgin_index].split(' ')[1]) / K
     pgpgout = int(lines[pgpgout_index].split(' ')[1]) / K
 
-    pswpin = int(lines[pswpin_index].split(' ')[1]) * SC_PAGESIZE / M
-    pswpout = int(lines[pswpout_index].split(' ')[1]) * SC_PAGESIZE / M
+    pswpin = int(lines[pswpin_index].split(' ')[1])
+    pswpout = int(lines[pswpout_index].split(' ')[1])
 
-    return (pgpgin, pgpgout, pswpin, pswpout)
+    pgfree = int(lines[pgfree_index].split(' ')[1])
+
+    pgfault = int(lines[pgfault_index].split(' ')[1])
+    pgmajfault = int(lines[pgmajfault_index].split(' ')[1])
+
+    pgsteal_kswapd = int(lines[pgsteal_kswapd_index].split(' ')[1])
+    pgsteal_direct = int(lines[pgsteal_direct_index].split(' ')[1])
+
+    pgscan_kswapd = int(lines[pgscan_kswapd_index].split(' ')[1])
+    pgscan_direct = int(lines[pgscan_direct_index].split(' ')[1])
+
+    return (pgpgin, pgpgout, pswpin, pswpout, pgfree, pgfault, pgmajfault,
+            pgsteal_kswapd + pgsteal_direct, pgscan_kswapd, pgscan_direct)
 
 
 def check_psi():
@@ -171,15 +184,19 @@ def restrict_file_lists():
         else:
             start_time = monotonic()
 
-            pgpgin0, pgpgout0, pswpin0, pswpout0 = check_vmstat()
+            (pgpgin0, pgpgout0, pswpin0, pswpout0, pgfree0, pgfault0,
+             pgmajfault0, pgsteal0, pgscan_kswapd0, pgscan_direct0
+             ) = check_vmstat()
 
             if PSI_OK:
-                (total_some_i0, total_full_i0, total_some_m0, total_full_m0
+                (total_some_i0, total_full_i0,
+                 total_some_m0, total_full_m0
                  ) = check_psi()
 
             if DEV_OK:
-                (r_ios0, r_mib0, r_wait0, w_ios0, w_mib0, w_wait0, active0
-                 ) = check_diskstats()
+                (r_ios0, r_mib0, r_wait0,
+                 w_ios0, w_mib0, w_wait0,
+                 active0) = check_diskstats()
 
             if KSWAPD_OK:
                 for i in kswapd_list:
@@ -245,11 +262,21 @@ def restrict_file_lists():
                     except IndexError:
                         continue
         else:
-            pgpgin1, pgpgout1, pswpin1, pswpout1 = check_vmstat()
+            (pgpgin1, pgpgout1, pswpin1, pswpout1, pgfree1, pgfault1,
+             pgmajfault1, pgsteal1, pgscan_kswapd1, pgscan_direct1
+             ) = check_vmstat()
+
             pgpgin = pgpgin1 - pgpgin0
             pgpgout = pgpgout1 - pgpgout0
             pswpin = pswpin1 - pswpin0
             pswpout = pswpout1 - pswpout0
+            pgfree = pgfree1 - pgfree0
+            pgfault = pgfault1 - pgfault0
+            pgmajfault = pgmajfault1 - pgmajfault0
+            pgsteal = pgsteal1 - pgsteal0
+            pgscan_kswapd = pgscan_kswapd1 - pgscan_kswapd0
+            pgscan_direct = pgscan_direct1 - pgscan_direct0
+            vmeff = (pgsteal + 1) / (pgscan_kswapd + pgscan_direct + 1) * 100
 
             if PSI_OK:
                 (total_some_i1, total_full_i1, total_some_m1, total_full_m1
@@ -282,14 +309,12 @@ def restrict_file_lists():
                 round(dt, 1)
             ))
 
-            log('kept starved during {}s'.format(
-                round(dt, 1)))
+            log('kept starved during {}s'.format(round(dt, 1)))
 
             mem_file_avg = mem_file_sum / count
             mem_free_avg = mem_free_sum / count
 
-            log(
-                'file lists and free memory sizes after reaching the target:')
+            log('file lists and free memory sizes after reaching the target:')
 
             log('  file: min={}M, max={}M, average={}M'.format(
                 round(mem_file_min / K, 1),
@@ -303,61 +328,122 @@ def restrict_file_lists():
                 round(mem_free_avg / K, 1)
             ))
 
-            log('vmstat I/O metrics for the last {}s:\n'
-                '  pgpgin:  {}M, {}M/s\n'
-                '  pgpgout: {}M, {}M/s\n'
-                '  pswpin:  {}M, {}M/s\n'
-                '  pswpout: {}M, {}M/s'.format(
-                    round(dt, 1),
-                    round(pgpgin, 1), round(pgpgin / dt, 1),
-                    round(pgpgout, 1), round(pgpgout / dt, 1),
-                    round(pswpin, 1), round(pswpin / dt, 1),
-                    round(pswpout, 1), round(pswpout / dt, 1)
-                ))
+            log('vmstat metrics for the last {}s:'.format(round(dt, 1)))
+
+            log('  pgpgin:     {}M, {}M/s'.format(
+                round(pgpgin, 1),
+                round(pgpgin / dt, 1)
+            ))
+
+            log('  pgpgout:    {}M, {}M/s'.format(
+                round(pgpgout, 1),
+                round(pgpgout / dt, 1)
+            ))
+
+            log('  pswpin:     {}, {}/s'.format(
+                pswpin,
+                round(pswpin / dt, 1)
+            ))
+
+            log('  pswpout:    {}, {}/s'.format(
+                pswpout,
+                round(pswpout / dt, 1)
+            ))
+
+            log('  pgfree:     {}, {}/s'.format(
+                pgfree,
+                round(pgfree / dt, 1)
+            ))
+
+            log('  pgfault:    {}, {}/s'.format(
+                pgfault,
+                round(pgfault / dt, 1)
+            ))
+
+            log('  pgmajfault: {}, {}/s'.format(
+                pgmajfault,
+                round(pgmajfault / dt, 1)
+            ))
+
+            log('  pgsteal:    {}, {}/s'.format(
+                pgsteal,
+                round(pgsteal / dt, 1)
+            ))
+
+            log('  pgscank:    {}, {}/s'.format(
+                pgscan_kswapd,
+                round(pgscan_kswapd / dt, 1)
+            ))
+
+            log('  pgscand:    {}, {}/s'.format(
+                pgscan_direct,
+                round(pgscan_direct / dt, 1)
+            ))
+
+            log('  vmeff:      {}%'.format(round(vmeff, 1)))
 
             if PSI_OK:
-                log('PSI metrics for the last {}s:\n'
-                    '  some io:     {}s, {}%\n'
-                    '  full io:     {}s, {}%\n'
-                    '  some memory: {}s, {}%\n'
-                    '  full memory: {}s, {}%'.format(
-                        round(dt, 1),
-                        round(total_some_i_sec, 1),
-                        round(total_some_i_sec / dt * 100, 1),
-                        round(total_full_i_sec, 1),
-                        round(total_full_i_sec / dt * 100, 1),
-                        round(total_some_m_sec, 1),
-                        round(total_some_m_sec / dt * 100, 1),
-                        round(total_full_m_sec, 1),
-                        round(total_full_m_sec / dt * 100, 1)
-                    ))
+                log('PSI metrics for the last {}s:'.format(round(dt, 1)))
+
+                log('  some io:     {}s, {}%'.format(
+                    round(total_some_i_sec, 1),
+                    round(total_some_i_sec / dt * 100, 1)
+                ))
+
+                log('  full io:     {}s, {}%'.format(
+                    round(total_full_i_sec, 1),
+                    round(total_full_i_sec / dt * 100, 1)
+                ))
+
+                log('  some memory: {}s, {}%'.format(
+                    round(total_some_m_sec, 1),
+                    round(total_some_m_sec / dt * 100, 1)
+                ))
+
+                log('  full memory: {}s, {}%'.format(
+                    round(total_full_m_sec, 1),
+                    round(total_full_m_sec / dt * 100, 1)
+                ))
 
             if DEV_OK:
-                log('I/O statistics for {} device in the last {}s:\n'
-                    '  util: {}s, {}%\n'
-                    '  read: {}M, {}M/s\n'
-                    '  read: {} requests processed, {} rp/s\n'
-                    '  read: await {}s, {}%\n'
-                    '  write: {}M, {}M/s\n'
-                    '  write: {} requests processed, {} rp/s\n'
-                    '  write: await {}s, {}%'.format(
-                        dev,
-                        round(dt, 1),
-                        round(active, 1),
-                        round(active / dt * 100, 1),
-                        round(r_mib, 1),
-                        round(r_mib / dt, 1),
-                        r_ios,
-                        round(r_ios / dt, 1),
-                        round(r_wait, 1),
-                        round(r_wait / dt * 100, 1),
-                        round(w_mib, 1),
-                        round(w_mib / dt, 1),
-                        w_ios,
-                        round(w_ios / dt, 1),
-                        round(w_wait, 1),
-                        round(w_wait / dt * 100, 1)
-                    ))
+                log('I/O statistics for {} device in the last {}s:'.format(
+                    dev, round(dt, 1)
+                ))
+
+                log('  util: {}s, {}%'.format(
+                    round(active, 1),
+                    round(active / dt * 100, 1)
+                ))
+
+                log('  read: {}M, {}M/s'.format(
+                    round(r_mib, 1),
+                    round(r_mib / dt, 1)
+                ))
+
+                log('  read: {} transfers, {} tps'.format(
+                    r_ios,
+                    round(r_ios / dt, 1)
+                ))
+
+                log('  read: await {}s, {}%'.format(
+                    round(r_wait, 1),
+                    round(r_wait / dt * 100, 1)
+                ))
+
+                log('  write: {}M, {}M/s'.format(
+                    round(w_mib, 1),
+                    round(w_mib / dt, 1)
+                ))
+
+                log('  write: {} transfers, {} tps'.format(
+                    w_ios,
+                    round(w_ios / dt, 1)
+                ))
+
+                log('  write: await {}s, {}%'.format(
+                    round(w_wait, 1),
+                    round(w_wait / dt * 100, 1)
+                ))
 
             if KSWAPD_OK:
                 log('kswapd stime for the last {}s:'.format(round(dt, 1)))
@@ -565,6 +651,27 @@ for n, line in enumerate(lines):
 
     if line.startswith('pswpout '):
         pswpout_index = n
+
+    if line.startswith('pgfree '):
+        pgfree_index = n
+
+    if line.startswith('pgfault '):
+        pgfault_index = n
+
+    if line.startswith('pgmajfault '):
+        pgmajfault_index = n
+
+    if line.startswith('pgsteal_kswapd '):
+        pgsteal_kswapd_index = n
+
+    if line.startswith('pgsteal_direct '):
+        pgsteal_direct_index = n
+
+    if line.startswith('pgscan_kswapd '):
+        pgscan_kswapd_index = n
+
+    if line.startswith('pgscan_direct '):
+        pgscan_direct_index = n
         break
 
 
@@ -584,7 +691,7 @@ if dev == '':
     log('W: device name to track I/O stats is not set')
 else:
     DEV_OK = True
-    log('device name to track I/O stats:', dev)
+    log('device name to track I/O stats: {}'.format(dev))
 
 if dev.isdigit():
     log('W: invalid device name: {}'.format(dev))
