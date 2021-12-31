@@ -503,7 +503,7 @@ parser.add_argument(
     '-i',
     '--interval',
     help='output interval in seconds',
-    default=10.0,
+    default=5.0,
     type=float
 )
 
@@ -526,7 +526,7 @@ parser.add_argument(
 parser.add_argument(
     '-L',
     '--lock',
-    help='lock current process memory',
+    help='lock current process memory (0 | 1)',
     default=1,
     type=int
 )
@@ -548,12 +548,6 @@ if log_file is None:
 else:
     separate_log = True
     import logging
-
-if log_file is not None:
-    logstring = 'log file: {}, '.format(log_file)
-else:
-    logstring = 'log file is not set, '
-
 
 if separate_log:
     try:
@@ -586,7 +580,6 @@ if interval < 0:
     log('error: invalid interval value (must be >= 0)')
     exit(1)
 
-
 if lock < 0 or lock > 1:
     log('error: invalid --lock option value (must be 0 or 1)')
     exit(1)
@@ -598,10 +591,6 @@ log('starting file-starve')
 K = 1024
 M = K * K
 m = 1000000
-
-
-SC_PAGESIZE = sysconf(sysconf_names['SC_PAGESIZE'])
-
 
 # in bytes
 CHUNK = K * chunk_size_kbytes
@@ -732,7 +721,7 @@ if len(kswapd_list) > 0:
         fd[pid] = open('/proc/{}/stat'.format(pid), 'rb', buffering=0)
 else:
     KSWAPD_OK = False
-    log('W: kswapd not found')
+    log('W: kswapd not found (missing permissions?)')
 
 
 sig_list = [SIGTERM, SIGINT, SIGQUIT, SIGHUP]
@@ -751,5 +740,6 @@ log('  target file LRU lists size: {}M'.format(target))
 log('  keep starved (timeout):     {}s'.format(timeout))
 log('  MemFree scale factor:       {}'.format(free_scale_factor))
 log('  chunk size:                 {}K'.format(chunk_size_kbytes))
+log('  output interval:            {}s'.format(interval))
 
 restrict_file_lists()
