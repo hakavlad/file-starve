@@ -179,10 +179,11 @@ def restrict_file_lists():
     while True:
         mem_free, mem_file = check_meminfo()
 
-        if mem_file > f_target:
+        if mem_file > mem_file_target:
             storage.append(bytearray(CHUNK))
         else:
-            start_time = monotonic()
+            t_start_target = monotonic()
+            dt = monotonic() - t_start
 
             (pgpgin0, pgpgout0, pswpin0, pswpout0, pgfree0, pgfault0,
              pgmajfault0, pgsteal0, pgscan_kswapd0, pgscan_direct0
@@ -204,7 +205,6 @@ def restrict_file_lists():
                     stime = check_stime(pid)
                     i.append(stime)
 
-            dt = monotonic() - t_start
             log('target reached in {}s'.format(round(dt, 1)))
             log('  file: {}M, free: {}M, passed: 0.0s'.format(
                 round(mem_file / K, 1),
@@ -218,10 +218,10 @@ def restrict_file_lists():
 
     mem_file_sum = mem_free_sum = count = 0
 
-    t_old = start_time
+    t_old = t_start_target
 
     while True:
-        dt = monotonic() - start_time
+        dt = monotonic() - t_start_target
 
         if dt < timeout or count == 0:
             mem_free, mem_file = check_meminfo()
@@ -253,7 +253,7 @@ def restrict_file_lists():
 
             count += 1
 
-            if mem_file > f_target:
+            if mem_file > mem_file_target:
                 storage.append(bytearray(CHUNK))
             else:
                 if mem_free < mem_free_min * free_scale_factor:
@@ -487,7 +487,7 @@ parser.add_argument(
     '-s',
     '--scale',
     help='MemFree scale factor',
-    default=2.0,
+    default=1.5,
     type=float
 )
 
@@ -561,27 +561,27 @@ if separate_log:
 
 
 if target < 0:
-    log('error: invalid target value (must be >= 0)')
+    print('error: invalid target value (must be >= 0)')
     exit(1)
 
 if timeout < 0:
-    log('error: invalid timeout value (must be >= 0)')
+    print('error: invalid timeout value (must be >= 0)')
     exit(1)
 
 if free_scale_factor < 1:
-    log('error: invalid scale factor value (must be >= 1)')
+    print('error: invalid scale factor value (must be >= 1)')
     exit(1)
 
 if chunk_size_kbytes < 1:
-    log('error: invalid chunk size value (must be >= 1)')
+    print('error: invalid chunk size value (must be >= 1)')
     exit(1)
 
 if interval < 0:
-    log('error: invalid interval value (must be >= 0)')
+    print('error: invalid interval value (must be >= 0)')
     exit(1)
 
 if lock < 0 or lock > 1:
-    log('error: invalid --lock option value (must be 0 or 1)')
+    print('error: invalid --lock option value (must be 0 or 1)')
     exit(1)
 
 
@@ -596,7 +596,7 @@ m = 1000000
 CHUNK = K * chunk_size_kbytes
 
 # MiB -> KiB
-f_target = K * target
+mem_file_target = K * target
 
 MEMINFO = '/proc/meminfo'
 
@@ -621,6 +621,24 @@ for line in meminfo_list:
 mem_free_index = meminfo_list_names.index('MemFree')
 active_file_index = meminfo_list_names.index('Active(file)')
 inactive_file_index = meminfo_list_names.index('Inactive(file)')
+mlocked_index = meminfo_list_names.index('Mlocked')
+swap_total_index = meminfo_list_names.index('SwapTotal')
+dirty_index = meminfo_list_names.index('Dirty')
+
+fd[MEMINFO].seek(0)
+m_list = fd[MEMINFO].read().decode().split(' kB\n')
+
+mem_total = int(m_list[0].split(':')[1])
+mlocked = int(m_list[mlocked_index].split(':')[1])
+swap_total = int(m_list[swap_total_index].split(':')[1])
+dirty = int(m_list[dirty_index].split(':')[1])
+
+log('MemTotal: {}M, Mlocked: {}M, SwapTotal: {}M, Dirty: {}M'.format(
+    round(mem_total / K, 1),
+    round(mlocked / K, 1),
+    round(swap_total / K, 1),
+    round(dirty / K, 1)
+))
 
 
 fd[VMSTAT] = open(VMSTAT, 'rb', buffering=0)
@@ -733,13 +751,13 @@ for i in sig_list:
 with open('/proc/self/oom_score_adj', 'w') as f:
     f.write('1000\n')
 
-if lock == 1:
-    mlockall()
-
 log('  target file LRU lists size: {}M'.format(target))
 log('  keep starved (timeout):     {}s'.format(timeout))
 log('  MemFree scale factor:       {}'.format(free_scale_factor))
 log('  chunk size:                 {}K'.format(chunk_size_kbytes))
 log('  output interval:            {}s'.format(interval))
+
+if lock == 1:
+    mlockall()
 
 restrict_file_lists()
