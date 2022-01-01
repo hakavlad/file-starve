@@ -185,9 +185,10 @@ def restrict_file_lists():
             t_start_target = monotonic()
             dt = monotonic() - t_start
 
-            (pgpgin0, pgpgout0, pswpin0, pswpout0, pgfree0, pgfault0,
-             pgmajfault0, pgsteal0, pgscan_kswapd0, pgscan_direct0
-             ) = check_vmstat()
+            if VMSTAT_OK:
+                (pgpgin0, pgpgout0, pswpin0, pswpout0, pgfree0, pgfault0,
+                pgmajfault0, pgsteal0, pgscan_kswapd0, pgscan_direct0
+                ) = check_vmstat()
 
             if PSI_OK:
                 (total_some_i0, total_full_i0,
@@ -690,8 +691,8 @@ try:
     check_vmstat()
 except Exception as e:
     VMSTAT_OK = False
-    log(e)
     log('W: cannot find the required vmstat metrics')
+    log(e)
 
 
 PSI_OK = True
