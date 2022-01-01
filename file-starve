@@ -262,21 +262,23 @@ def restrict_file_lists():
                     except IndexError:
                         continue
         else:
-            (pgpgin1, pgpgout1, pswpin1, pswpout1, pgfree1, pgfault1,
-             pgmajfault1, pgsteal1, pgscan_kswapd1, pgscan_direct1
-             ) = check_vmstat()
+            if VMSTAT_OK:
+                (pgpgin1, pgpgout1, pswpin1, pswpout1, pgfree1, pgfault1,
+                 pgmajfault1, pgsteal1, pgscan_kswapd1, pgscan_direct1
+                 ) = check_vmstat()
 
-            pgpgin = pgpgin1 - pgpgin0
-            pgpgout = pgpgout1 - pgpgout0
-            pswpin = pswpin1 - pswpin0
-            pswpout = pswpout1 - pswpout0
-            pgfree = pgfree1 - pgfree0
-            pgfault = pgfault1 - pgfault0
-            pgmajfault = pgmajfault1 - pgmajfault0
-            pgsteal = pgsteal1 - pgsteal0
-            pgscan_kswapd = pgscan_kswapd1 - pgscan_kswapd0
-            pgscan_direct = pgscan_direct1 - pgscan_direct0
-            vmeff = (pgsteal + 1) / (pgscan_kswapd + pgscan_direct + 1) * 100
+                pgpgin = pgpgin1 - pgpgin0
+                pgpgout = pgpgout1 - pgpgout0
+                pswpin = pswpin1 - pswpin0
+                pswpout = pswpout1 - pswpout0
+                pgfree = pgfree1 - pgfree0
+                pgfault = pgfault1 - pgfault0
+                pgmajfault = pgmajfault1 - pgmajfault0
+                pgsteal = pgsteal1 - pgsteal0
+                pgscan_kswapd = pgscan_kswapd1 - pgscan_kswapd0
+                pgscan_direct = pgscan_direct1 - pgscan_direct0
+                vmeff = (pgsteal + 1) / (
+                    pgscan_kswapd + pgscan_direct + 1) * 100
 
             if PSI_OK:
                 (total_some_i1, total_full_i1, total_some_m1, total_full_m1
@@ -328,59 +330,60 @@ def restrict_file_lists():
                 round(mem_free_avg / K, 1)
             ))
 
-            log('vmstat metrics for the last {}s:'.format(round(dt, 1)))
+            if VMSTAT_OK:
+                log('vmstat metrics for the last {}s:'.format(round(dt, 1)))
 
-            log('  pgpgin:     {}M, {}M/s'.format(
-                round(pgpgin, 1),
-                round(pgpgin / dt, 1)
-            ))
+                log('  pgpgin:     {}M, {}M/s'.format(
+                    round(pgpgin, 1),
+                    round(pgpgin / dt, 1)
+                ))
 
-            log('  pgpgout:    {}M, {}M/s'.format(
-                round(pgpgout, 1),
-                round(pgpgout / dt, 1)
-            ))
+                log('  pgpgout:    {}M, {}M/s'.format(
+                    round(pgpgout, 1),
+                    round(pgpgout / dt, 1)
+                ))
 
-            log('  pswpin:     {}, {}/s'.format(
-                pswpin,
-                round(pswpin / dt, 1)
-            ))
+                log('  pswpin:     {}, {}/s'.format(
+                    pswpin,
+                    round(pswpin / dt, 1)
+                ))
 
-            log('  pswpout:    {}, {}/s'.format(
-                pswpout,
-                round(pswpout / dt, 1)
-            ))
+                log('  pswpout:    {}, {}/s'.format(
+                    pswpout,
+                    round(pswpout / dt, 1)
+                ))
 
-            log('  pgfree:     {}, {}/s'.format(
-                pgfree,
-                round(pgfree / dt, 1)
-            ))
+                log('  pgfree:     {}, {}/s'.format(
+                    pgfree,
+                    round(pgfree / dt, 1)
+                ))
 
-            log('  pgfault:    {}, {}/s'.format(
-                pgfault,
-                round(pgfault / dt, 1)
-            ))
+                log('  pgfault:    {}, {}/s'.format(
+                    pgfault,
+                    round(pgfault / dt, 1)
+                ))
 
-            log('  pgmajfault: {}, {}/s'.format(
-                pgmajfault,
-                round(pgmajfault / dt, 1)
-            ))
+                log('  pgmajfault: {}, {}/s'.format(
+                    pgmajfault,
+                    round(pgmajfault / dt, 1)
+                ))
 
-            log('  pgsteal:    {}, {}/s'.format(
-                pgsteal,
-                round(pgsteal / dt, 1)
-            ))
+                log('  pgsteal:    {}, {}/s'.format(
+                    pgsteal,
+                    round(pgsteal / dt, 1)
+                ))
 
-            log('  pgscank:    {}, {}/s'.format(
-                pgscan_kswapd,
-                round(pgscan_kswapd / dt, 1)
-            ))
+                log('  pgscank:    {}, {}/s'.format(
+                    pgscan_kswapd,
+                    round(pgscan_kswapd / dt, 1)
+                ))
 
-            log('  pgscand:    {}, {}/s'.format(
-                pgscan_direct,
-                round(pgscan_direct / dt, 1)
-            ))
+                log('  pgscand:    {}, {}/s'.format(
+                    pgscan_direct,
+                    round(pgscan_direct / dt, 1)
+                ))
 
-            log('  vmeff:      {}%'.format(round(vmeff, 1)))
+                log('  vmeff:      {}%'.format(round(vmeff, 1)))
 
             if PSI_OK:
                 log('PSI metrics for the last {}s:'.format(round(dt, 1)))
@@ -681,6 +684,15 @@ for n, line in enumerate(lines):
         pgscan_direct_index = n
         break
 
+VMSTAT_OK = True
+
+try:
+    check_vmstat()
+except Exception as e:
+    VMSTAT_OK = False
+    log(e)
+    log('W: cannot find the required vmstat metrics')
+
 
 PSI_OK = True
 
@@ -751,13 +763,13 @@ for i in sig_list:
 with open('/proc/self/oom_score_adj', 'w') as f:
     f.write('1000\n')
 
+if lock == 1:
+    mlockall()
+
 log('  target file LRU lists size: {}M'.format(target))
 log('  keep starved (timeout):     {}s'.format(timeout))
 log('  MemFree scale factor:       {}'.format(free_scale_factor))
 log('  chunk size:                 {}K'.format(chunk_size_kbytes))
 log('  output interval:            {}s'.format(interval))
-
-if lock == 1:
-    mlockall()
 
 restrict_file_lists()
